@@ -1,42 +1,50 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
-const KEY = "ra-favs";
+// Favourites live on the server; this is a small client cache of the viewer's ids.
+let ids: number[] | null = null; // null = not loaded yet, [] = loaded (or logged out)
+let loading = false;
 const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((l) => l());
 
-function read(): string {
+async function load() {
+  if (loading) return;
+  loading = true;
   try {
-    return localStorage.getItem(KEY) ?? "[]";
+    const r = await fetch("/api/favorites?ids=only");
+    ids = r.ok ? (await r.json()).ids : [];
   } catch {
-    return "[]";
+    ids = [];
   }
+  loading = false;
+  emit();
 }
 function subscribe(cb: () => void) {
   listeners.add(cb);
-  window.addEventListener("storage", cb);
-  return () => {
-    listeners.delete(cb);
-    window.removeEventListener("storage", cb);
-  };
+  if (ids === null) void load();
+  return () => void listeners.delete(cb);
 }
-export function useFavorites(): string[] {
-  return JSON.parse(useSyncExternalStore(subscribe, read, () => "[]"));
-}
+const EMPTY: number[] = [];
+const snapshot = () => ids ?? EMPTY;
 
 export default function FavoriteButton({ id }: { id: string }) {
-  const favs = useFavorites();
-  const on = favs.includes(id);
-  function toggle(e: React.MouseEvent) {
+  const router = useRouter();
+  const favs = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
+  const n = Number(id);
+  const on = favs.includes(n);
+
+  async function toggle(e: React.MouseEvent) {
     e.preventDefault();
-    const next = on ? favs.filter((f) => f !== id) : [...favs, id];
-    try {
-      localStorage.setItem(KEY, JSON.stringify(next));
-    } catch {}
-    listeners.forEach((l) => l());
+    const res = await fetch(`/api/favorites/${id}`, { method: on ? "DELETE" : "PUT" });
+    if (res.status === 401) return router.push(`/login?next=${encodeURIComponent(location.pathname)}`);
+    if (res.ok) {
+      ids = on ? favs.filter((f) => f !== n) : [...favs, n];
+      emit();
+    }
   }
   return (
-    <button onClick={toggle} aria-pressed={on} aria-label={on ? "Remove favourite" : "Add favourite"}
-      className="grid h-8 w-8 place-items-center rounded-full bg-white/90 text-lg shadow">
+    <button onClick={toggle} aria-pressed={on} aria-label={on ? "Remove favourite" : "Add favourite"} className="grid h-8 w-8 place-items-center rounded-full bg-white/90 text-lg shadow">
       <span className={on ? "text-rose-500" : "text-slate-500"}>{on ? "♥" : "♡"}</span>
     </button>
   );

@@ -2,11 +2,11 @@ import Link from "next/link";
 import { connection } from "next/server";
 import AdCard from "@/components/AdCard";
 import { CATEGORIES } from "@/lib/categories";
-import { searchAds } from "@/lib/store";
+import { searchAds } from "@/lib/server/ads";
 
 export default async function Home() {
   await connection();
-  const ads = searchAds();
+  const ads = await searchAds();
   return (
     <div className="space-y-8">
       <section className="rounded-2xl bg-gradient-to-r from-teal-700 to-teal-500 p-8 text-white">

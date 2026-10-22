@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import AdCard from "@/components/AdCard";
 import { CATEGORIES, CITIES, categoryName } from "@/lib/categories";
 import { CONDITIONS } from "@/lib/types";
-import { searchAds, type Query } from "@/lib/store";
+import { searchAds, type Query } from "@/lib/server/ads";
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 const num = (v: string | undefined) => (v !== undefined && v !== "" && !Number.isNaN(+v) ? +v : undefined);
@@ -20,7 +20,7 @@ export default async function Search({ searchParams }: PageProps<"/search">) {
     max: num(one(sp.max)),
     sort: sort === "price-asc" || sort === "price-desc" ? sort : "new",
   };
-  const ads = searchAds(query);
+  const ads = await searchAds(query);
   const field = "w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm";
 
   return (

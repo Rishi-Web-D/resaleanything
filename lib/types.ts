@@ -9,7 +9,10 @@ export interface Ad {
   condition: Condition;
   city: string;
   seller: string;
-  phone: string;
+  userId?: number;
+  status?: "active" | "sold";
+  images?: string[];
+  phone?: string;
   emoji: string;
   hue: number;
   createdAt: string;

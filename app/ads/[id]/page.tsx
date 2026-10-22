@@ -1,19 +1,23 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import AdCard, { Thumb } from "@/components/AdCard";
+import ManageAd from "@/components/ManageAd";
+import { currentUser } from "@/lib/server/auth";
 import ContactSeller from "@/components/ContactSeller";
 import FavoriteButton from "@/components/FavoriteButton";
 import { categoryName } from "@/lib/categories";
 import { inr, timeAgo } from "@/lib/format";
-import { getAd, relatedAds } from "@/lib/store";
+import { getAd, relatedAds } from "@/lib/server/ads";
 import { CONDITIONS } from "@/lib/types";
 
 export default async function AdPage({ params }: PageProps<"/ads/[id]">) {
   await connection();
   const { id } = await params;
-  const ad = getAd(id);
+  const ad = await getAd(id);
   if (!ad) notFound();
-  const related = relatedAds(ad);
+  const related = await relatedAds(ad);
+  const user = await currentUser();
+  const mine = user?.id === ad.userId;
 
   return (
     <div className="space-y-8">
@@ -21,6 +25,14 @@ export default async function AdPage({ params }: PageProps<"/ads/[id]">) {
         <div className="space-y-4">
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <Thumb ad={ad} big />
+            {ad.images && ad.images.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto p-2">
+                {ad.images.map((f) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={f} src={`/api/uploads/${f}`} alt="" className="h-20 w-20 rounded object-cover" />
+                ))}
+              </div>
+            )}
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-2 font-bold">Details</h2>
@@ -40,11 +52,12 @@ export default async function AdPage({ params }: PageProps<"/ads/[id]">) {
               <FavoriteButton id={ad.id} />
             </div>
             <h1 className="mt-1 font-medium">{ad.title}</h1>
+            {ad.status === "sold" && <p className="mt-2 rounded bg-slate-800 px-2 py-1 text-center text-xs font-bold text-white">SOLD</p>}
             <p className="mt-2 text-xs text-slate-500">{ad.city} · {timeAgo(ad.createdAt)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <p className="mb-3 font-bold">Posted by {ad.seller}</p>
-            <ContactSeller phone={ad.phone} seller={ad.seller} />
+            {mine ? <ManageAd id={ad.id} sold={ad.status === "sold"} /> : <ContactSeller adId={ad.id} seller={ad.seller} loggedIn={!!user} />}
           </div>
           <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Safety tip: meet in a public place and pay only after inspecting the item.</p>
         </aside>
