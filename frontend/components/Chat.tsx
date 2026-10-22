@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { MessageView } from "@/lib/types";
 
-export default function Chat({ conversationId, meId, initial }: { conversationId: number; meId: number; initial: MessageView[] }) {
+export default function Chat({ conversationId, meId, initial }: { conversationId: string; meId: string; initial: MessageView[] }) {
   const [msgs, setMsgs] = useState(initial);
   const [text, setText] = useState("");
   const [error, setError] = useState("");

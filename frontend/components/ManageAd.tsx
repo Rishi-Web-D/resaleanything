@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 
-export default function ManageAd({ id, sold }: { id: number; sold: boolean }) {
+export default function ManageAd({ id, sold }: { id: string; sold: boolean }) {
   const router = useRouter();
   async function toggle() {
     await fetch(`/api/ads/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: sold ? "active" : "sold" }) });

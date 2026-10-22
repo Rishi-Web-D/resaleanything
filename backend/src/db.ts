@@ -1,131 +1,122 @@
-import { DataTypes, Model, Sequelize, Transaction, type CreationOptional, type ForeignKey, type InferAttributes, type InferCreationAttributes } from "sequelize";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
+import mongoose, { Schema, Types, type Model } from "mongoose";
 import { randomBytes } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { config } from "./config";
 import { SEED_ADS } from "./seed-data";
 
-export class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
-  declare id: CreationOptional<number>;
-  declare name: string;
-  declare email: string;
-  declare phone: string;
-  declare passwordHash: string;
-  declare createdAt: CreationOptional<Date>;
+export interface IUser { _id: Types.ObjectId; name: string; email: string; phone: string; passwordHash: string; createdAt: Date }
+export interface ISession { _id: string; userId: Types.ObjectId; expiresAt: Date }
+export interface IAd {
+  _id: Types.ObjectId; userId: Types.ObjectId; title: string; description: string; price: number; category: string;
+  condition: string; city: string; status: "active" | "sold"; featured: boolean; images: string[]; createdAt: Date;
 }
-export class Session extends Model<InferAttributes<Session>, InferCreationAttributes<Session>> {
-  declare tokenHash: string;
-  declare userId: ForeignKey<User["id"]>;
-  declare expiresAt: number;
+export interface IFavorite { userId: Types.ObjectId; adId: Types.ObjectId; createdAt: Date }
+export interface IConversation {
+  _id: Types.ObjectId; adId: Types.ObjectId; buyerId: Types.ObjectId; sellerId: Types.ObjectId;
+  msgSeq: number; lastMessage: string | null; lastMessageAt: Date | null; createdAt: Date;
 }
-export class Ad extends Model<InferAttributes<Ad>, InferCreationAttributes<Ad>> {
-  declare id: CreationOptional<number>;
-  declare userId: ForeignKey<User["id"]>;
-  declare title: string;
-  declare description: string;
-  declare price: number;
-  declare category: string;
-  declare condition: string;
-  declare city: string;
-  declare status: CreationOptional<"active" | "sold">;
-  declare featured: CreationOptional<boolean>;
-  declare createdAt: CreationOptional<Date>;
-  declare User?: User;
-  declare AdImages?: AdImage[];
-}
-export class AdImage extends Model<InferAttributes<AdImage>, InferCreationAttributes<AdImage>> {
-  declare id: CreationOptional<number>;
-  declare adId: ForeignKey<Ad["id"]>;
-  declare file: string;
-  declare position: number;
-}
-export class Favorite extends Model<InferAttributes<Favorite>, InferCreationAttributes<Favorite>> {
-  declare userId: ForeignKey<User["id"]>;
-  declare adId: ForeignKey<Ad["id"]>;
-}
-export class Conversation extends Model<InferAttributes<Conversation>, InferCreationAttributes<Conversation>> {
-  declare id: CreationOptional<number>;
-  declare adId: ForeignKey<Ad["id"]>;
-  declare buyerId: ForeignKey<User["id"]>;
-  declare sellerId: ForeignKey<User["id"]>;
-  declare createdAt: CreationOptional<Date>;
-  declare Ad?: Ad;
-  declare buyer?: User;
-  declare seller?: User;
-}
-export class Message extends Model<InferAttributes<Message>, InferCreationAttributes<Message>> {
-  declare id: CreationOptional<number>;
-  declare conversationId: ForeignKey<Conversation["id"]>;
-  declare senderId: ForeignKey<User["id"]>;
-  declare body: string;
-  declare createdAt: CreationOptional<Date>;
-}
+export interface IMessage { _id: Types.ObjectId; conversationId: Types.ObjectId; seq: number; senderId: Types.ObjectId; body: string; createdAt: Date }
 
-const T = DataTypes;
+const ref = (to: string, extra = {}) => ({ type: Schema.Types.ObjectId, ref: to, required: true, ...extra });
+const created = { timestamps: { createdAt: true, updatedAt: false } } as const;
 
-export const sequelize = new Sequelize({
-  dialect: "sqlite",
-  storage: process.env.DB_STORAGE ?? path.join(config.dataDir, "resale.db"),
-  logging: false,
-  define: { underscored: true },
-});
+const userSchema = new Schema<IUser>({
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  phone: { type: String, required: true },
+  passwordHash: { type: String, required: true },
+}, created);
 
-const id = { type: T.INTEGER, primaryKey: true, autoIncrement: true } as const;
-const fk = (name: string) => ({ name, allowNull: false });
+// The session id is the SHA-256 of the cookie token. MongoDB's TTL monitor deletes expired sessions.
+const sessionSchema = new Schema<ISession>({
+  _id: { type: String },
+  userId: ref("User", { index: true }),
+  expiresAt: { type: Date, required: true, index: { expires: 0 } },
+}, { versionKey: false });
 
-User.init({ id, name: { type: T.STRING, allowNull: false }, email: { type: T.STRING, allowNull: false, unique: true },
-  phone: { type: T.STRING, allowNull: false }, passwordHash: { type: T.STRING, allowNull: false }, createdAt: T.DATE },
-  { sequelize, modelName: "User", tableName: "users", updatedAt: false });
-Session.init({ tokenHash: { type: T.STRING, primaryKey: true }, expiresAt: { type: T.BIGINT, allowNull: false } },
-  { sequelize, modelName: "Session", tableName: "sessions", timestamps: false });
-Ad.init({ id, title: { type: T.STRING(80), allowNull: false }, description: { type: T.TEXT, allowNull: false },
-  price: { type: T.INTEGER, allowNull: false, validate: { min: 1 } }, category: { type: T.STRING, allowNull: false },
-  condition: { type: T.STRING, allowNull: false }, city: { type: T.STRING, allowNull: false },
-  status: { type: T.ENUM("active", "sold"), allowNull: false, defaultValue: "active" },
-  featured: { type: T.BOOLEAN, allowNull: false, defaultValue: false }, createdAt: T.DATE },
-  { sequelize, modelName: "Ad", tableName: "ads", updatedAt: false, indexes: [{ fields: ["category", "status", "created_at"] }, { fields: ["user_id"] }] });
-AdImage.init({ id, file: { type: T.STRING, allowNull: false }, position: { type: T.INTEGER, allowNull: false, defaultValue: 0 } },
-  { sequelize, modelName: "AdImage", tableName: "ad_images", timestamps: false });
-Favorite.init({ userId: { type: T.INTEGER, primaryKey: true }, adId: { type: T.INTEGER, primaryKey: true } },
-  { sequelize, modelName: "Favorite", tableName: "favorites", timestamps: false });
-Conversation.init({ id, createdAt: T.DATE },
-  { sequelize, modelName: "Conversation", tableName: "conversations", updatedAt: false, indexes: [{ unique: true, fields: ["ad_id", "buyer_id"] }] });
-Message.init({ id, body: { type: T.TEXT, allowNull: false }, createdAt: T.DATE },
-  { sequelize, modelName: "Message", tableName: "messages", updatedAt: false, indexes: [{ fields: ["conversation_id", "id"] }] });
+const adSchema = new Schema<IAd>({
+  userId: ref("User"),
+  title: { type: String, required: true, maxlength: 80 },
+  description: { type: String, required: true, maxlength: 4000 },
+  price: { type: Number, required: true, min: 1, validate: Number.isInteger },
+  category: { type: String, required: true },
+  condition: { type: String, required: true },
+  city: { type: String, required: true },
+  status: { type: String, enum: ["active", "sold"], default: "active" },
+  featured: { type: Boolean, default: false },
+  images: { type: [String], default: [] },
+}, created);
+adSchema.index({ status: 1, category: 1, createdAt: -1 });
+adSchema.index({ status: 1, createdAt: -1 });
+adSchema.index({ userId: 1, createdAt: -1 });
 
-const cascade = { onDelete: "CASCADE" } as const;
-User.hasMany(Session, { foreignKey: fk("userId"), ...cascade }); Session.belongsTo(User, { foreignKey: "userId" });
-User.hasMany(Ad, { foreignKey: fk("userId"), ...cascade }); Ad.belongsTo(User, { foreignKey: "userId" });
-Ad.hasMany(AdImage, { foreignKey: fk("adId"), ...cascade }); AdImage.belongsTo(Ad, { foreignKey: "adId" });
-Favorite.belongsTo(User, { foreignKey: "userId", ...cascade });
-Favorite.belongsTo(Ad, { foreignKey: "adId", ...cascade });
-Ad.hasMany(Favorite, { foreignKey: "adId", ...cascade });
-Ad.hasMany(Conversation, { foreignKey: fk("adId"), ...cascade }); Conversation.belongsTo(Ad, { foreignKey: "adId" });
-Conversation.belongsTo(User, { as: "buyer", foreignKey: fk("buyerId"), ...cascade });
-Conversation.belongsTo(User, { as: "seller", foreignKey: fk("sellerId"), ...cascade });
-Conversation.hasMany(Message, { foreignKey: fk("conversationId"), ...cascade }); Message.belongsTo(Conversation, { foreignKey: "conversationId" });
-Message.belongsTo(User, { as: "sender", foreignKey: fk("senderId"), ...cascade });
+const favoriteSchema = new Schema<IFavorite>({ userId: ref("User"), adId: ref("Ad", { index: true }) }, { ...created, versionKey: false });
+favoriteSchema.index({ userId: 1, adId: 1 }, { unique: true });
 
-/** Creates the data dir and tables (idempotent) and seeds demo ads into an empty database. */
+const conversationSchema = new Schema<IConversation>({
+  adId: ref("Ad"),
+  buyerId: ref("User", { index: true }),
+  sellerId: ref("User", { index: true }),
+  msgSeq: { type: Number, default: 0 }, // per-conversation message counter: gives a total order for polling
+  lastMessage: { type: String, default: null },
+  lastMessageAt: { type: Date, default: null },
+}, created);
+conversationSchema.index({ adId: 1, buyerId: 1 }, { unique: true });
+
+const messageSchema = new Schema<IMessage>({
+  conversationId: ref("Conversation"),
+  seq: { type: Number, required: true },
+  senderId: ref("User"),
+  body: { type: String, required: true, maxlength: 2000 },
+}, { ...created, versionKey: false });
+messageSchema.index({ conversationId: 1, seq: 1 }, { unique: true });
+
+const metaSchema = new Schema({ _id: String, at: Date }, { versionKey: false });
+
+const model = <T>(name: string, s: Schema<T>) => (mongoose.models[name] as Model<T>) ?? mongoose.model<T>(name, s);
+
+export const User = model("User", userSchema);
+export const Session = model("Session", sessionSchema);
+export const Ad = model("Ad", adSchema);
+export const Favorite = model("Favorite", favoriteSchema);
+export const Conversation = model("Conversation", conversationSchema);
+export const Message = model("Message", messageSchema);
+const Meta = mongoose.models.Meta ?? mongoose.model("Meta", metaSchema);
+
+export const isId = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{24}$/i.test(v);
+
+/** Connects, builds indexes (unique constraints, TTL) and seeds demo ads into an empty database. */
 export async function initDb() {
   mkdirSync(config.dataDir, { recursive: true });
-  await sequelize.query("PRAGMA journal_mode = WAL");
-  await sequelize.sync();
-  await sequelize.transaction({ type: Transaction.TYPES.IMMEDIATE }, async (transaction) => {
-    if ((await Ad.count({ transaction })) === 0) await seed(transaction);
-  });
+  await mongoose.connect(config.mongoUri, { dbName: config.mongoDb, serverSelectionTimeoutMS: 10_000, maxPoolSize: 10 });
+  await Promise.all([User, Session, Ad, Favorite, Conversation, Message].map((m) => m.init()));
+  await seedIfEmpty();
 }
 
+export const dbHost = () => mongoose.connection.host;
+export const disconnectDb = () => mongoose.disconnect();
+
 // Seed sellers cannot log in: their password hash is not a valid scrypt value.
-async function seed(transaction: Transaction) {
-  const users = new Map<string, User>();
-  for (const a of SEED_ADS) {
-    let u = users.get(a.seller);
-    if (!u) {
-      u = await User.create({ name: a.seller, email: `${a.seller.toLowerCase()}.${randomBytes(3).toString("hex")}@seed.invalid`, phone: a.phone, passwordHash: "!seed" }, { transaction });
-      users.set(a.seller, u);
+async function seedIfEmpty() {
+  if ((await Ad.estimatedDocumentCount()) > 0) return;
+  // A one-row lock so two instances starting together don't both seed.
+  const prior = await Meta.findOneAndUpdate({ _id: "seed" }, { $setOnInsert: { at: new Date() } }, { upsert: true, returnDocument: "before" });
+  if (prior) return;
+  try {
+    const users = new Map<string, Types.ObjectId>();
+    const ads: Partial<IAd>[] = [];
+    for (const a of SEED_ADS) {
+      let uid = users.get(a.seller);
+      if (!uid) {
+        uid = (await User.create({ name: a.seller, email: `${a.seller.toLowerCase()}.${randomBytes(3).toString("hex")}@seed.invalid`, phone: a.phone, passwordHash: "!seed" }))._id;
+        users.set(a.seller, uid);
+      }
+      ads.push({ userId: uid, title: a.title, description: a.description, price: a.price, category: a.category,
+        condition: a.condition, city: a.city, featured: a.featured, createdAt: new Date(a.createdAt) });
     }
-    await Ad.create({ userId: u.id, title: a.title, description: a.description, price: a.price, category: a.category,
-      condition: a.condition, city: a.city, featured: a.featured, createdAt: new Date(a.createdAt) }, { transaction });
+    await Ad.insertMany(ads);
+  } catch (e) {
+    await Meta.deleteOne({ _id: "seed" }); // let the next start retry
+    throw e;
   }
 }

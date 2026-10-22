@@ -2,7 +2,7 @@
   "name": "resaleanything-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Express + Sequelize API for resaleanything",
+  "description": "Express + Mongoose (MongoDB) API for resaleanything",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -18,9 +18,8 @@
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
     "helmet": "^8.3.0",
-    "multer": "^2.4.0",
-    "sequelize": "^6.37.8",
-    "sqlite3": "^6.0.1"
+    "mongoose": "^9.11.3",
+    "multer": "^2.4.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

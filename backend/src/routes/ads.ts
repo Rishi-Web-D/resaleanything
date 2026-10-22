@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { me, requireAuth } from "../auth";
-import { Ad, User } from "../db";
+import { Ad, isId } from "../db";
 import { HttpError } from "../errors";
 import {
   createAd, deleteAd, getAd, getAdsByIds, MAX_IMAGE_BYTES, MAX_IMAGES, relatedAds, saveImages, searchAds, updateAd, validateAd, type AdInput,
@@ -14,15 +14,14 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 const num = (v: unknown) => (typeof v === "string" && v !== "" && Number.isFinite(+v) ? +v : undefined);
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 const idParam = (v: unknown) => {
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 1) throw new HttpError(404, "Ad not found");
-  return n;
+  if (!isId(v)) throw new HttpError(404, "Ad not found");
+  return v;
 };
 
 adsRouter.get("/", async (req, res) => {
   const q = req.query;
   if (typeof q.ids === "string")
-    return void res.json(await getAdsByIds(q.ids.split(",").map(Number).filter(Number.isInteger).slice(0, 100)));
+    return void res.json(await getAdsByIds(q.ids.split(",").slice(0, 100)));
   res.json(
     await searchAds({
       q: str(q.q), category: str(q.category), city: str(q.city), condition: str(q.condition), min: num(q.min), max: num(q.max),
@@ -51,9 +50,9 @@ adsRouter.get("/:id/related", async (req, res) => {
 
 // Seller phone numbers are only revealed to logged-in users.
 adsRouter.get("/:id/phone", requireAuth, async (req, res) => {
-  const ad = await Ad.findByPk(idParam(req.params.id), { include: [{ model: User, attributes: ["phone"] }] });
-  if (!ad?.User) throw new HttpError(404, "Ad not found");
-  res.json({ phone: ad.User.phone });
+  const ad = await Ad.findById(idParam(req.params.id), "userId").populate<{ userId: { phone: string } | null }>("userId", "phone").lean();
+  if (!ad?.userId) throw new HttpError(404, "Ad not found");
+  res.json({ phone: ad.userId.phone });
 });
 
 async function ownedAd(req: import("express").Request) {

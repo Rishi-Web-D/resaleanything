@@ -1,19 +1,16 @@
 import { createApp } from "./app";
-import { purgeExpiredSessions } from "./auth";
 import { config } from "./config";
-import { initDb, sequelize } from "./db";
+import { dbHost, disconnectDb, initDb } from "./db";
 
 async function main() {
   await initDb();
+  console.log(`Connected to MongoDB at ${dbHost()}`);
   const app = createApp();
   const server = app.listen(config.port, config.host, () => console.log(`API listening on http://${config.host}:${config.port}`));
 
-  const purge = setInterval(() => purgeExpiredSessions().catch((e) => console.error("session purge failed", e)), 3600_000);
-  purge.unref();
-
   const shutdown = () => {
     server.close(async () => {
-      await sequelize.close();
+      await disconnectDb();
       process.exit(0);
     });
     setTimeout(() => process.exit(1), 10_000).unref();

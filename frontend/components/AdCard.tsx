@@ -5,7 +5,7 @@ import { categoryEmoji } from "@/lib/categories";
 import FavoriteButton from "./FavoriteButton";
 
 export function Thumb({ ad, big }: { ad: Ad; big?: boolean }) {
-  const hue = (ad.id * 47) % 360;
+  const hue = parseInt(ad.id.slice(-6), 16) % 360;
   return (
     <div
       className={`relative grid place-items-center overflow-hidden ${big ? "h-72 text-9xl" : "h-40 text-6xl"}`}

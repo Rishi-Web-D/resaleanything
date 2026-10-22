@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export default function ContactSeller({ adId, seller, loggedIn }: { adId: number; seller: string; loggedIn: boolean }) {
+export default function ContactSeller({ adId, seller, loggedIn }: { adId: string; seller: string; loggedIn: boolean }) {
   const router = useRouter();
   const [phone, setPhone] = useState<string | null>(null);
   const [error, setError] = useState("");

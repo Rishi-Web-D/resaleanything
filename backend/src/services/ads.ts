@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { col, fn, Op, where as sqlWhere, type WhereOptions } from "sequelize";
+import type { QueryFilter } from "mongoose";
 import { config } from "../config";
 import { CATEGORIES, CITIES, CONDITIONS } from "../constants";
-import { Ad as AdModel, AdImage, sequelize, User } from "../db";
+import { Ad, Conversation, Favorite, isId, Message, type IAd } from "../db";
 import { HttpError } from "../errors";
 
 export const UPLOAD_DIR = path.join(config.dataDir, "uploads");
@@ -12,68 +12,70 @@ export const MAX_IMAGES = 4;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 export interface AdDto {
-  id: number; userId: number; title: string; description: string; price: number; category: string;
+  id: string; userId: string; title: string; description: string; price: number; category: string;
   condition: string; city: string; seller: string; status: "active" | "sold"; featured: boolean;
   createdAt: string; images: string[];
 }
 
-const include = [
-  { model: User, attributes: ["name"] },
-  { model: AdImage, separate: true, order: [["position", "ASC"]] as [string, string][] },
-];
+type PopulatedAd = Omit<IAd, "userId"> & { userId: { _id: IAd["userId"]; name: string } | null };
 
-const toDto = (r: AdModel): AdDto => ({
-  id: r.id, userId: r.userId, title: r.title, description: r.description, price: r.price, category: r.category,
-  condition: r.condition, city: r.city, seller: r.User?.name ?? "Seller", status: r.status, featured: r.featured,
-  createdAt: r.createdAt.toISOString(), images: (r.AdImages ?? []).map((i) => i.file),
+const toDto = (r: PopulatedAd): AdDto => ({
+  id: String(r._id), userId: String(r.userId?._id ?? ""), title: r.title, description: r.description, price: r.price,
+  category: r.category, condition: r.condition, city: r.city, seller: r.userId?.name ?? "Seller", status: r.status,
+  featured: r.featured, createdAt: r.createdAt.toISOString(), images: r.images ?? [],
 });
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export interface Query {
   q?: string; category?: string; city?: string; condition?: string; min?: number; max?: number;
-  sort?: "new" | "price-asc" | "price-desc"; userId?: number; includeSold?: boolean; limit?: number; offset?: number;
+  sort?: "new" | "price-asc" | "price-desc"; userId?: string; includeSold?: boolean; limit?: number; offset?: number;
 }
 
 export async function searchAds(f: Query = {}): Promise<AdDto[]> {
-  const and: WhereOptions[] = [];
-  if (!f.includeSold) and.push({ status: "active" });
-  const q = f.q?.trim().toLowerCase();
+  const filter: QueryFilter<IAd> = {};
+  if (!f.includeSold) filter.status = "active";
+  const q = f.q?.trim();
   if (q) {
-    // instr() instead of LIKE so user-typed % and _ are plain characters.
-    const hit = (c: string) => sqlWhere(fn("instr", fn("lower", col(c)), q), Op.gt, 0);
-    and.push({ [Op.or]: [hit("Ad.title"), hit("Ad.description")] });
+    // Escaped, case-insensitive substring match: user-typed regex characters are plain text.
+    const re = new RegExp(escapeRegExp(q), "i");
+    filter.$or = [{ title: re }, { description: re }];
   }
-  if (f.category) and.push({ category: f.category });
-  if (f.city) and.push({ city: f.city });
-  if (f.condition) and.push({ condition: f.condition });
-  if (f.min !== undefined) and.push({ price: { [Op.gte]: f.min } });
-  if (f.max !== undefined) and.push({ price: { [Op.lte]: f.max } });
-  if (f.userId !== undefined) and.push({ userId: f.userId });
-  const order: [string, string][] =
-    f.sort === "price-asc" ? [["price", "ASC"]] : f.sort === "price-desc" ? [["price", "DESC"]] : [["createdAt", "DESC"], ["id", "DESC"]];
-  const rows = await AdModel.findAll({
-    where: { [Op.and]: and }, include, order,
-    limit: Math.min(Math.max(f.limit ?? 60, 1), 100), offset: Math.max(f.offset ?? 0, 0),
-  });
-  return rows.map(toDto);
+  if (f.category) filter.category = f.category;
+  if (f.city) filter.city = f.city;
+  if (f.condition) filter.condition = f.condition;
+  if (f.min !== undefined || f.max !== undefined) {
+    filter.price = { ...(f.min !== undefined && { $gte: f.min }), ...(f.max !== undefined && { $lte: f.max }) };
+  }
+  if (f.userId !== undefined) filter.userId = f.userId;
+  const sort: Record<string, 1 | -1> =
+    f.sort === "price-asc" ? { price: 1, _id: -1 } : f.sort === "price-desc" ? { price: -1, _id: -1 } : { createdAt: -1, _id: -1 };
+  const rows = await Ad.find(filter)
+    .sort(sort)
+    .skip(Math.max(f.offset ?? 0, 0))
+    .limit(Math.min(Math.max(f.limit ?? 60, 1), 100))
+    .populate("userId", "name")
+    .lean();
+  return (rows as unknown as PopulatedAd[]).map(toDto);
 }
 
-export async function getAd(id: number): Promise<AdDto | undefined> {
-  if (!Number.isInteger(id)) return undefined;
-  const r = await AdModel.findByPk(id, { include });
-  return r ? toDto(r) : undefined;
+export async function getAd(id: string): Promise<AdDto | undefined> {
+  if (!isId(id)) return undefined;
+  const r = await Ad.findById(id).populate("userId", "name").lean();
+  return r ? toDto(r as unknown as PopulatedAd) : undefined;
 }
 
-export async function getAdsByIds(ids: number[]): Promise<AdDto[]> {
-  if (!ids.length) return [];
-  return (await AdModel.findAll({ where: { id: ids }, include, order: [["createdAt", "DESC"]] })).map(toDto);
+export async function getAdsByIds(ids: string[]): Promise<AdDto[]> {
+  const valid = ids.filter(isId);
+  if (!valid.length) return [];
+  const rows = await Ad.find({ _id: { $in: valid } }).sort({ createdAt: -1 }).populate("userId", "name").lean();
+  return (rows as unknown as PopulatedAd[]).map(toDto);
 }
 
 export async function relatedAds(ad: AdDto, n = 4): Promise<AdDto[]> {
-  const rows = await AdModel.findAll({
-    where: { category: ad.category, status: "active", id: { [Op.ne]: ad.id } },
-    include, order: [["createdAt", "DESC"]], limit: n,
-  });
-  return rows.map(toDto);
+  const rows = await Ad.find({ category: ad.category, status: "active", _id: { $ne: ad.id } })
+    .sort({ createdAt: -1 }).limit(n).populate("userId", "name").lean();
+  return (rows as unknown as PopulatedAd[]).map(toDto);
 }
 
 export interface AdInput { title: string; description: string; price: number; category: string; condition: string; city: string }
@@ -127,24 +129,28 @@ export async function readUpload(name: string) {
   }
 }
 
-export async function createAd(userId: number, input: AdInput, files: string[]): Promise<AdDto> {
+export async function createAd(userId: string, input: AdInput, files: string[]): Promise<AdDto> {
   try {
-    const id = await sequelize.transaction(async (transaction) => {
-      const ad = await AdModel.create({ userId, ...input }, { transaction });
-      await AdImage.bulkCreate(files.map((file, position) => ({ adId: ad.id, file, position })), { transaction });
-      return ad.id;
-    });
-    return (await getAd(id))!;
+    const ad = await Ad.create({ userId, ...input, images: files });
+    return (await getAd(String(ad._id)))!;
   } catch (e) {
     await removeImages(files);
     throw e;
   }
 }
 
-export const updateAd = (id: number, patch: Partial<AdInput> & { status?: "active" | "sold" }) => AdModel.update(patch, { where: { id } });
+export const updateAd = (id: string, patch: Partial<AdInput> & { status?: "active" | "sold" }) =>
+  Ad.updateOne({ _id: id }, { $set: patch }, { runValidators: true });
 
-export async function deleteAd(id: number) {
-  const files = (await AdImage.findAll({ where: { adId: id } })).map((i) => i.file);
-  await AdModel.destroy({ where: { id } });
-  await removeImages(files);
+/** Deletes the ad, everything that hangs off it, and its photo files. */
+export async function deleteAd(id: string) {
+  const ad = await Ad.findByIdAndDelete(id).lean();
+  if (!ad) return;
+  const convs = await Conversation.find({ adId: id }, "_id").lean();
+  await Promise.all([
+    Favorite.deleteMany({ adId: id }),
+    Message.deleteMany({ conversationId: { $in: convs.map((c) => c._id) } }),
+    Conversation.deleteMany({ adId: id }),
+    removeImages(ad.images),
+  ]);
 }

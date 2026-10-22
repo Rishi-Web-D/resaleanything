@@ -10,5 +10,5 @@ export default async function Thread({ params }: PageProps<"/messages/[id]">) {
   const r = await api<MessageView[]>(`/api/conversations/${encodeURIComponent(id)}/messages`, { auth: true });
   if (r.status === 404) notFound();
   if (!r.ok) throw new Error("Could not load conversation");
-  return <Chat conversationId={+id} meId={user.id} initial={r.data} />;
+  return <Chat conversationId={id} meId={user.id} initial={r.data} />;
 }

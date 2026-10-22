@@ -1,8 +1,8 @@
 export type Condition = "new" | "like-new" | "good" | "fair";
 
 export interface Ad {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   title: string;
   description: string;
   price: number;
@@ -17,16 +17,17 @@ export interface Ad {
 }
 
 export interface User {
-  id: number;
+  id: string;
   name: string;
   email: string;
   phone: string;
 }
 
 export interface ConversationView {
-  id: number; adId: number; adTitle: string; other: string; lastMessage: string | null; lastAt: string; mine: "buyer" | "seller";
+  id: string; adId: string; adTitle: string; other: string; lastMessage: string | null; lastAt: string; mine: "buyer" | "seller";
 }
-export interface MessageView { id: number; senderId: number; body: string; createdAt: string }
+// id is the per-conversation sequence number (used for polling with ?after=)
+export interface MessageView { id: number; senderId: string; body: string; createdAt: string }
 
 export const CONDITIONS: { value: Condition; label: string }[] = [
   { value: "new", label: "Brand new" },

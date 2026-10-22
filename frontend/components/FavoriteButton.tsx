@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
 // Favourites live on the server; this is a small client cache of the viewer's ids.
-let ids: number[] | null = null; // null = not loaded yet, [] = loaded (or logged out)
+let ids: string[] | null = null; // null = not loaded yet, [] = loaded (or logged out)
 let loading = false;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -25,10 +25,10 @@ function subscribe(cb: () => void) {
   if (ids === null) void load();
   return () => void listeners.delete(cb);
 }
-const EMPTY: number[] = [];
+const EMPTY: string[] = [];
 const snapshot = () => ids ?? EMPTY;
 
-export default function FavoriteButton({ id }: { id: number }) {
+export default function FavoriteButton({ id }: { id: string }) {
   const router = useRouter();
   const favs = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
   const on = favs.includes(id);

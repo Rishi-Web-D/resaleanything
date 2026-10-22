@@ -1,7 +1,6 @@
 import { createHash, randomBytes, scrypt as _scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { NextFunction, Request, Response } from "express";
-import { Op } from "sequelize";
 import { config } from "./config";
 import { Session, User } from "./db";
 import { HttpError } from "./errors";
@@ -9,7 +8,7 @@ import { HttpError } from "./errors";
 const scrypt = promisify(_scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 export const COOKIE = "ra_session";
 
-export interface AuthUser { id: number; name: string; email: string; phone: string }
+export interface AuthUser { id: string; name: string; email: string; phone: string }
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -33,29 +32,28 @@ export async function verifyPassword(pw: string, stored: string) {
 
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
-export async function startSession(res: Response, userId: number) {
+export async function startSession(res: Response, userId: string) {
   const token = randomBytes(32).toString("base64url");
-  const expires = Date.now() + config.sessionTtlMs;
-  await Session.create({ tokenHash: sha(token), userId, expiresAt: expires });
-  res.cookie(COOKIE, token, { httpOnly: true, sameSite: "lax", secure: config.secureCookies, path: "/", expires: new Date(expires) });
+  const expires = new Date(Date.now() + config.sessionTtlMs);
+  await Session.create({ _id: sha(token), userId, expiresAt: expires });
+  res.cookie(COOKIE, token, { httpOnly: true, sameSite: "lax", secure: config.secureCookies, path: "/", expires });
 }
 
 export async function endSession(req: Request, res: Response) {
   const token = req.cookies?.[COOKIE];
-  if (token) await Session.destroy({ where: { tokenHash: sha(token) } });
+  if (typeof token === "string") await Session.deleteOne({ _id: sha(token) });
   res.clearCookie(COOKIE, { path: "/" });
 }
-
-export const purgeExpiredSessions = () => Session.destroy({ where: { expiresAt: { [Op.lt]: Date.now() } } });
 
 /** Populates req.user when a valid session cookie is present. Never rejects. */
 export async function loadUser(req: Request, _res: Response, next: NextFunction) {
   try {
     const token = req.cookies?.[COOKIE];
-    if (token) {
-      const s = await Session.findOne({ where: { tokenHash: sha(token), expiresAt: { [Op.gt]: Date.now() } } });
-      const u = s && (await User.findByPk(s.userId));
-      if (u) req.user = { id: u.id, name: u.name, email: u.email, phone: u.phone };
+    if (typeof token === "string") {
+      // The TTL monitor runs about once a minute, so expiry is also checked here.
+      const s = await Session.findOne({ _id: sha(token), expiresAt: { $gt: new Date() } }).lean();
+      const u = s && (await User.findById(s.userId).lean());
+      if (u) req.user = { id: String(u._id), name: u.name, email: u.email, phone: u.phone };
     }
     next();
   } catch (e) {
