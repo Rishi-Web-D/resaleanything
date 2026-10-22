@@ -1,5 +1,6 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { clientIp } from "../clientIp";
 import { endSession, hashPassword, startSession, verifyPassword } from "../auth";
 import { config } from "../config";
 import { User } from "../db";
@@ -9,7 +10,7 @@ import { HttpError } from "../errors";
 export const authRouter = Router();
 
 const limiter = (windowMs: number, limit: number) =>
-  rateLimit({ windowMs, limit, standardHeaders: "draft-7", legacyHeaders: false, handler: (_q, _r, next) => next(new HttpError(429, "Too many attempts, try again later")) });
+  rateLimit({ windowMs, limit, standardHeaders: "draft-7", legacyHeaders: false, keyGenerator: (req) => ipKeyGenerator(clientIp(req)), handler: (_q, _r, next) => next(new HttpError(429, "Too many attempts, try again later")) });
 
 const publicUser = (u: { _id: Types.ObjectId; name: string; email: string; phone: string }) => ({ id: String(u._id), name: u.name, email: u.email, phone: u.phone });
 

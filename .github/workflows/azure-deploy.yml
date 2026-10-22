@@ -1,0 +1,58 @@
+name: Deploy to Azure App Service
+
+# Runs on every push to main, or manually from the Actions tab.
+# Does nothing until the repository variable AZURE_WEBAPP_NAME is set (see docs/DEPLOY_AZURE.md).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: azure-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ vars.AZURE_WEBAPP_NAME != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install
+        run: |
+          npm ci --prefix backend
+          npm ci --prefix frontend
+
+      - name: Build
+        run: |
+          npm run build --prefix backend
+          npm run build --prefix frontend
+
+      # Ship only what runs in production; Azure does not build anything.
+      - name: Prune dev dependencies
+        run: |
+          npm prune --omit=dev --prefix backend
+          npm prune --omit=dev --prefix frontend
+
+      - name: Assemble release
+        run: |
+          mkdir -p release/backend release/frontend release/scripts
+          cp -r backend/dist backend/node_modules backend/package.json release/backend/
+          cp -r frontend/.next frontend/node_modules frontend/package.json frontend/next.config.mjs release/frontend/
+          if [ -d frontend/public ]; then cp -r frontend/public release/frontend/; fi
+          cp scripts/start.mjs release/scripts/
+          cp package.json release/
+
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: release

@@ -28,8 +28,11 @@ npm run dev              # Express on :4000 and Next on :3000, with reload
 Production (`MONGODB_URI` is required when `NODE_ENV=production`):
 ```bash
 npm run build
-npm start                # set INSECURE_COOKIES=1 for the backend only if you serve over plain HTTP
+npm start                # runs scripts/start.mjs: Express on :4000 (loopback) + Next on $PORT (default 3000)
 ```
+Set `INSECURE_COOKIES=1` only if you serve production over plain HTTP.
+
+**Deploying to Azure:** see [docs/DEPLOY_AZURE.md](docs/DEPLOY_AZURE.md) (portal walkthrough; GitHub Actions deploys on every push to `main`).
 Run them individually with `npm run dev --prefix backend` / `npm run dev --prefix frontend`.
 
 ## Configuration
@@ -42,6 +45,7 @@ Backend (`backend/.env.example`):
 | `MONGODB_URI` | `mongodb://127.0.0.1:27017/resaleanything` | connection string (**required in production**). Include the database name in the path |
 | `MONGODB_DB` | – | database name, only if the URI has none |
 | `DATA_DIR` | `backend/data` | photo uploads (`uploads/`), git-ignored |
+| `TRUST_PROXY` | `1` | reverse proxies in front of the API (Next = 1; `2` on Azure App Service). Controls the client IP used for rate limiting |
 | `INSECURE_COOKIES` | unset | `1` allows the session cookie over HTTP in production mode |
 | `AUTH_RATE_MAX` | `10` | login / register attempts per window per IP |
 
