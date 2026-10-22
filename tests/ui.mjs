@@ -1,4 +1,4 @@
-// Browser flow tests (needs: npm i -D playwright). Same server requirements as tests/api.mjs.
+// Browser flow tests through the full stack (frontend :3000 -> Express :4000). Needs: npm i -D playwright (and a Chromium).
 // Usage: BASE_URL=http://localhost:3000 node tests/ui.mjs [scratch-dir]
 import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';

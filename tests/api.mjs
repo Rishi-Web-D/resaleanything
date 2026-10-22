@@ -1,6 +1,7 @@
-// API integration tests. Needs a fresh DB (expects the 26 seed ads) and a server started with INSECURE_COOKIES=1 when not using HTTPS.
-// Usage: BASE_URL=http://localhost:3000 node tests/api.mjs
-const B=process.env.BASE_URL??'http://localhost:3000';
+// API integration tests against the Express server.
+// Needs a FRESH database (expects the 26 seed ads) and a backend started with a high AUTH_RATE_MAX
+// and, in production mode, INSECURE_COOKIES=1. Usage: BASE_URL=http://localhost:4000 node tests/api.mjs
+const B=process.env.BASE_URL??'http://localhost:4000';
 let pass=0, fail=0;
 const ok=(c,m)=>{c?pass++:fail++; console.log(c?'PASS':'FAIL',m)};
 class Client{ cookie=''; async req(m,p,body,headers={}){ const isForm=body instanceof FormData;
@@ -70,4 +71,10 @@ r=await b.req('DELETE',`/api/ads/${adId}`); r=await a.req('POST','/api/auth/logi
 r=await a.req('DELETE',`/api/ads/${adId}`); ok(r.s===200,'owner deletes ad');
 ok((await fetch(`${B}/api/uploads/${img}`)).status===404,'image file removed with ad');
 r=await b.req('GET',`/api/conversations/${cid}/messages`); ok(r.s===404,'conversation cascaded on ad delete');
+
+// --- Express-level behaviour ---
+r=await anon.req('GET','/api/nope'); ok(r.s===404&&r.d?.error==='Not found','unknown API route returns JSON 404');
+r=await anon.req('GET','/api/ads/abc'); ok(r.s===404,'non-numeric ad id 404');
+{ const raw=await fetch(B+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{bad json'}); ok(raw.status===400,'malformed JSON -> 400'); }
+{ const h=await fetch(B+'/api/health'); ok(h.headers.get('x-content-type-options')==='nosniff'&&!h.headers.get('x-powered-by'),'security headers set, x-powered-by removed'); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);
